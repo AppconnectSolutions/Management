@@ -2,7 +2,8 @@ import { useState } from "react";
 import { ArrowLeft, Lock, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-export default function AdminLogin() {
+export default function AdminLogin({ onLoginSuccess }) {
+
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -15,33 +16,35 @@ const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
 
 
   const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
+  e.preventDefault();
+  setLoading(true);
+  setError("");
 
-    try {
-      const res = await fetch(`${API_URL}/api/admin/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+  try {
+    const res = await fetch(`${API_URL}/api/admin/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
 
-      const data = await res.json();
+    const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data.message || "Login failed");
-      }
-
-      // OPTIONAL: store admin info
-      localStorage.setItem("admin", JSON.stringify(data.admin));
-
-      navigate("/admin/dashboard"); // ✅ redirect after success
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+    if (!res.ok) {
+      throw new Error(data.message || "Login failed");
     }
-  };
+
+    localStorage.setItem("adminUser", JSON.stringify(data.admin));
+    onLoginSuccess(data.admin); // 🔥 THIS WAS MISSING
+
+    navigate("/admin/dashboard", { replace: true });
+
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6 relative">

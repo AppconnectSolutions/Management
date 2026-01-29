@@ -1,47 +1,37 @@
-import { useState, useEffect, useRef } from "react";
-import { Users, MessageSquare, Upload, Megaphone } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Users, MessageSquare, Upload, Megaphone, Save, X, Edit2, Trash2 } from "lucide-react";
 import html2canvas from "html2canvas";
 import Invoice from "./Invoice";
 import { createRoot } from "react-dom/client";
 import { useNavigate } from "react-router-dom";
 
-
 const WA_TAB_NAME = "WHATSAPP_WEB_TAB";
 
 function normalizePhone(mobile) {
   let digits = String(mobile || "").replace(/\D/g, "");
-
-  // remove leading 0 (optional)
   if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
-
-  // if already 91XXXXXXXXXX keep it
   if (digits.length === 12 && digits.startsWith("91")) return digits;
-
-  // add India code if only 10 digits
   if (digits.length === 10) digits = "91" + digits;
-
   return digits;
 }
 
-// ✅ IMPORTANT: use send?phone= (NOT send/?phone=)
 function buildWaUrl(phone, text) {
   const msg = encodeURIComponent(text || "");
   return `https://web.whatsapp.com/send?phone=${phone}&text=${msg}&app_absent=0`;
 }
 
 export default function CustomerList() {
+  const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+
+  const navigate = useNavigate();
+  const waWindowRef = useRef(null);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [customers, setCustomers] = useState([]);
   const [uploading, setUploading] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-const [editForm, setEditForm] = useState({
-  name: "",
-  mobile: "",
-  usedPages: 0, // ✅ ADD THIS
-});
-const loggedUser = JSON.parse(localStorage.getItem("admin") || "null");
-const isAdmin = loggedUser?.role === "ADMIN";
 
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ name: "", mobile: "", usedPages: 0 });
 
   const [sendingInvoice, setSendingInvoice] = useState(false);
   const [sendingPromo, setSendingPromo] = useState(false);
@@ -49,37 +39,45 @@ const isAdmin = loggedUser?.role === "ADMIN";
   const [activePromo, setActivePromo] = useState({
     id: null,
     title: "",
-    message:
-      "🔥 Special Offer! Xerox & Services available. Visit today and get best deals!",
+    message: "🔥 Special Offer! Xerox & Services available. Visit today and get best deals!",
     is_active: 0,
   });
 
-  const waWindowRef = useRef(null);
+  const loggedUser = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem("adminUser") || "null");
+    } catch {
+      return null;
+    }
+  }, []);
 
-  const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+  const role = String(loggedUser?.role || "").toUpperCase();
+const isAdmin = role === "ADMIN" || role === "OWNER";
 
-  // ✅ Always reuse ONE WhatsApp tab
+// ✅ staff access controlled by approved flag
+const canManage = isAdmin || Number(loggedUser?.approved) === 1;
+
+
+  /* ================= WhatsApp tab re-use ================= */
   const getOrOpenWhatsAppTab = () => {
     if (waWindowRef.current && !waWindowRef.current.closed) {
       waWindowRef.current.focus();
       return waWindowRef.current;
     }
 
-    // Open named tab. If already exists, it will be reused.
     const win = window.open("about:blank", WA_TAB_NAME);
     if (!win) {
       alert("Popup blocked! Please allow popups for this site.");
       return null;
     }
 
-    // Load WhatsApp Web in that same tab
     win.location.href = "https://web.whatsapp.com/";
     waWindowRef.current = win;
     win.focus();
     return win;
   };
 
-  /* ---------------- FETCH ACTIVE PROMO FROM DB ---------------- */
+  /* ================= Fetch active promo ================= */
   const fetchActivePromotion = async () => {
     try {
       const res = await fetch(`${API_URL}/api/promotions/active`);
@@ -103,7 +101,7 @@ const isAdmin = loggedUser?.role === "ADMIN";
     }
   };
 
-  /* ---------------- FETCH REWARDS ---------------- */
+  /* ================= Fetch rewards ================= */
   const fetchRewards = async (mobile) => {
     try {
       const res = await fetch(`${API_URL}/api/transactions/customer/${mobile}`);
@@ -124,7 +122,7 @@ const isAdmin = loggedUser?.role === "ADMIN";
     }
   };
 
-  /* ---------------- FETCH CUSTOMERS ---------------- */
+  /* ================= Fetch customers ================= */
   const fetchCustomers = async () => {
     try {
       const res = await fetch(`${API_URL}/api/customers`);
@@ -149,7 +147,7 @@ const isAdmin = loggedUser?.role === "ADMIN";
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ---------------- CSV UPLOAD ---------------- */
+  /* ================= CSV upload ================= */
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -176,7 +174,7 @@ const isAdmin = loggedUser?.role === "ADMIN";
     }
   };
 
-  /* ---------------- PROMOTE CUSTOMER ---------------- */
+  /* ================= Promote ================= */
   const promoteCustomer = async (customer) => {
     if (!customer?.mobile) return;
 
@@ -186,10 +184,9 @@ const isAdmin = loggedUser?.role === "ADMIN";
     try {
       setSendingPromo(true);
 
-      // fetch latest promo and use returned value (no state timing issue)
       const latestPromo = (await fetchActivePromotion()) || activePromo;
-
       const phone = normalizePhone(customer.mobile);
+
       const promoMsg = latestPromo?.message?.trim()
         ? latestPromo.message.trim()
         : "🔥 Special Offer! Visit today and get best deals!";
@@ -207,20 +204,15 @@ const isAdmin = loggedUser?.role === "ADMIN";
     }
   };
 
-  /* ---------------- NOTIFY CUSTOMER (INVOICE) ---------------- */
+  /* ================= Invoice notify ================= */
   const notifyCustomer = async (customer) => {
     if (!customer?.mobile) return;
 
-    // ✅ Open/reuse tab immediately (user click moment)
     const waWin = getOrOpenWhatsAppTab();
     if (!waWin) return;
 
-    // ✅ Jump to customer chat immediately (so WhatsApp locks onto that phone)
     const phone = normalizePhone(customer.mobile);
-    waWin.location.href = buildWaUrl(
-      phone,
-      `Hi ${customer.name || ""}, preparing your invoice...`
-    );
+    waWin.location.href = buildWaUrl(phone, `Hi ${customer.name || ""}, preparing your invoice...`);
     waWin.focus();
 
     try {
@@ -279,7 +271,6 @@ const isAdmin = loggedUser?.role === "ADMIN";
       const url = uploadData?.url;
       if (!url) throw new Error("Upload failed (no URL returned)");
 
-      // ✅ Now update same chat with final message
       const text = `Hi ${customer.name || ""}, your invoice is ready.\nView it here: ${url}`;
       waWin.location.href = buildWaUrl(phone, text);
       waWin.focus();
@@ -290,182 +281,172 @@ const isAdmin = loggedUser?.role === "ADMIN";
       setSendingInvoice(false);
     }
   };
-  const navigate = useNavigate();
- const viewTransactions = (customer) => {
-  navigate(`/admin/customers/${customer.mobile}/transactions`);
-};
+
+  /* ================= Transactions ================= */
+  const viewTransactions = (customer) => {
+    navigate(`/admin/customers/${customer.mobile}/transactions`);
+  };
+
+  /* ================= Edit / delete ================= */
+  const startEdit = (c) => {
+   if (!canManage) return;
 
 
+    setEditingId(c.id);
+    setEditForm({
+      name: c.name || "",
+      mobile: c.mobile || "",
+      usedPages: c.usedPages ?? 0,
+    });
+  };
 
-  // OR Example 2: open in new tab
-  // window.open(`/transactions/${customer.mobile}`, "_blank");
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditForm({ name: "", mobile: "", usedPages: 0 });
+  };
 
-  // OR Example 3: open modal (if you already use one)
+  const saveEdit = async (customer) => {
+   if (!canManage) return;
 
-const startEdit = (c) => {
-  if (!isAdmin) return;   // ✅ ADD THIS LINE
+    try {
+      await fetch(`${API_URL}/api/customers/${customer.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editForm.name,
+          mobile: editForm.mobile,
+        }),
+      });
 
-  setEditingId(c.id);
-  setEditForm({
-    name: c.name || "",
-    mobile: c.mobile || "",
-    usedPages: c.usedPages ?? 0,
-  });
-};
+      await fetch(`${API_URL}/api/customers/${customer.id}/adjust-xerox`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          totalPrinted: Number(editForm.usedPages),
+        }),
+      });
 
+      await fetchCustomers();
+      cancelEdit();
+    } catch (e) {
+      alert(e?.message || "Update failed");
+    }
+  };
 
-const cancelEdit = () => {
-  setEditingId(null);
-  setEditForm({ name: "", mobile: "" });
-};
+  const deleteCustomer = async (id) => {
+    if (!canManage) return;
+    if (!window.confirm("Deactivate this customer?")) return;
 
-const saveEdit = async (customer) => {
-   if (!isAdmin) return;
-  // 1️⃣ Update name & mobile
-  await fetch(`${API_URL}/api/customers/${customer.id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: editForm.name,
-      mobile: editForm.mobile,
-    }),
-  });
+    try {
+      await fetch(`${API_URL}/api/customers/${id}`, { method: "DELETE" });
+      await fetchCustomers();
+    } catch (e) {
+      alert(e?.message || "Deactivate failed");
+    }
+  };
 
-  // 2️⃣ Update Xerox pages
-  await fetch(`${API_URL}/api/customers/${customer.id}/adjust-xerox`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      totalPrinted: Number(editForm.usedPages),
-    }),
-  });
-
-  await fetchCustomers(); // refresh list
-  cancelEdit();
-};
-
-const deleteCustomer = async (id) => {
-  if (!isAdmin) return;
-  if (!window.confirm("Deactivate this customer?")) return;
-
-  await fetch(`${API_URL}/api/customers/${id}`, {
-    method: "DELETE",
-  });
-
-  fetchCustomers();
-};
-
-
+  /* ================= Filtered list ================= */
+  const filtered = customers
+    .filter((c) => c.is_active !== 0)
+    .filter((c) => {
+      const st = searchTerm.toLowerCase();
+      return (c.name || "").toLowerCase().includes(st) || String(c.mobile || "").includes(searchTerm);
+    });
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+    <div className="bg-white rounded-xl shadow-sm border overflow-hidden w-full">
       {/* HEADER */}
-      <div className="p-4 border-b flex flex-col lg:flex-row lg:justify-between lg:items-center gap-3 bg-gray-50">
-        <div className="flex flex-col">
-          <h3 className="font-bold flex items-center gap-2">
-            <Users size={20} /> Customer Database
-          </h3>
+      <div className="p-4 border-b bg-gray-50">
+        <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-3">
+          <div className="flex flex-col">
+            <h3 className="font-bold flex items-center gap-2">
+              <Users size={20} /> Customer Database
+            </h3>
 
-          <div className="text-xs text-gray-600 mt-1">
-            <span className="font-semibold">Active Promo:</span>{" "}
-            {activePromo?.title ? `${activePromo.title} - ` : ""}
-            {activePromo?.message?.slice(0, 80) || "-"}
-            {activePromo?.message?.length > 80 ? "..." : ""}
+            <div className="text-xs text-gray-600 mt-1">
+              <span className="font-semibold">Active Promo:</span>{" "}
+              {activePromo?.title ? `${activePromo.title} - ` : ""}
+              {activePromo?.message?.slice(0, 80) || "-"}
+              {activePromo?.message?.length > 80 ? "..." : ""}
+            </div>
           </div>
-        </div>
 
-        <div className="flex flex-col lg:flex-row gap-3 lg:items-center w-full lg:w-auto">
-          <label className="bg-indigo-600 text-white px-3 py-2 rounded cursor-pointer text-sm flex items-center gap-2 w-fit">
-            <Upload size={16} />
-            {uploading ? "Uploading..." : "Upload CSV"}
-            <input type="file" hidden accept=".csv" onChange={handleUpload} />
-          </label>
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center w-full lg:w-auto">
+            <label className="bg-indigo-600 text-white px-3 py-2 rounded cursor-pointer text-sm inline-flex items-center gap-2 w-fit">
+              <Upload size={16} />
+              {uploading ? "Uploading..." : "Upload CSV"}
+              <input type="file" hidden accept=".csv" onChange={handleUpload} />
+            </label>
 
-          <input
-            className="border px-3 py-2 rounded text-sm"
-            placeholder="Search..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+            <input
+              className="border px-3 py-2 rounded text-sm w-full sm:w-64"
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 
-      {/* TABLE */}
-      <table className="w-full text-sm">
-        <thead className="bg-gray-100">
-          <tr>
-            <th className="px-6 py-3">Name</th>
-            <th className="px-6 py-3">Mobile</th>
-            <th className="px-6 py-3 text-center">Used Pages</th>
-            <th className="px-6 py-3 text-center">Free Earned</th>
-            <th className="px-6 py-3 text-center">Free Remaining</th>
-            <th className="px-6 py-3 text-center">Promotions</th>
-            <th className="px-6 py-3 text-right">Invoice</th>
-            <th className="px-6 py-3 text-center">Transactions</th>
-            <th className="px-6 py-3 text-center">Actions</th>
+      {/* DESKTOP TABLE */}
+      <div className="hidden lg:block">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="px-6 py-3 text-left">Name</th>
+              <th className="px-6 py-3 text-left">Mobile</th>
+              <th className="px-6 py-3 text-center">Used Pages</th>
+              <th className="px-6 py-3 text-center">Free Earned</th>
+              <th className="px-6 py-3 text-center">Free Remaining</th>
+              <th className="px-6 py-3 text-center">Promotions</th>
+              <th className="px-6 py-3 text-right">Invoice</th>
+              <th className="px-6 py-3 text-center">Transactions</th>
+              <th className="px-6 py-3 text-center">Actions</th>
+            </tr>
+          </thead>
 
-
-          </tr>
-        </thead>
-
-        <tbody>
-          {customers
-  .filter((c) => c.is_active !== 0) // 🔥 HIDE DEACTIVATED CUSTOMERS
-  .filter(
-    (c) =>
-      (c.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (c.mobile || "").includes(searchTerm)
-  )
-  .map((c) => (
-
+          <tbody>
+            {filtered.map((c) => (
               <tr key={c.id} className="border-t">
                 <td className="px-6 py-3 font-bold">
-  {editingId === c.id ? (
-    <input
-      className="border px-2 py-1 rounded text-sm w-full"
-      value={editForm.name}
-      onChange={(e) =>
-        setEditForm({ ...editForm, name: e.target.value })
-      }
-    />
-  ) : (
-    c.name || "-"
-  )}
-</td>
+                  {editingId === c.id ? (
+                    <input
+                      className="border px-2 py-1 rounded text-sm w-full"
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    />
+                  ) : (
+                    c.name || "-"
+                  )}
+                </td>
 
-               <td className="px-6 py-3">
-  {editingId === c.id ? (
-    <input
-      className="border px-2 py-1 rounded text-sm w-full"
-      value={editForm.mobile}
-      onChange={(e) =>
-        setEditForm({ ...editForm, mobile: e.target.value })
-      }
-    />
-  ) : (
-    c.mobile || "-"
-  )}
-</td>
-
+                <td className="px-6 py-3">
+                  {editingId === c.id ? (
+                    <input
+                      className="border px-2 py-1 rounded text-sm w-full"
+                      value={editForm.mobile}
+                      onChange={(e) => setEditForm({ ...editForm, mobile: e.target.value })}
+                    />
+                  ) : (
+                    c.mobile || "-"
+                  )}
+                </td>
 
                 <td className="px-6 py-3 text-center">
-  {editingId === c.id ? (
-    <input
-      type="number"
-      min="0"
-      className="border px-2 py-1 rounded text-sm w-20 text-center"
-      value={editForm.usedPages}
-      onChange={(e) =>
-        setEditForm({
-          ...editForm,
-          usedPages: Number(e.target.value || 0),
-        })
-      }
-    />
-  ) : (
-    c.usedPages ?? 0
-  )}
-</td>
+                  {editingId === c.id ? (
+                    <input
+                      type="number"
+                      min="0"
+                      className="border px-2 py-1 rounded text-sm w-20 text-center"
+                      value={editForm.usedPages}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, usedPages: Number(e.target.value || 0) })
+                      }
+                    />
+                  ) : (
+                    c.usedPages ?? 0
+                  )}
+                </td>
 
                 <td className="px-6 py-3 text-center">{c.freeEarned ?? 0}</td>
                 <td className="px-6 py-3 text-center">{c.freeRemaining ?? 0}</td>
@@ -491,60 +472,227 @@ const deleteCustomer = async (id) => {
                     {sendingInvoice ? "Sending..." : "Notify"}
                   </button>
                 </td>
+
                 <td className="px-6 py-3 text-center">
-  <button
-    onClick={() => viewTransactions(c)}
-    className="bg-green-100 text-green-700 px-3 py-1.5 rounded text-xs inline-flex items-center gap-2"
-  >
-    View
-  </button>
-</td>
-<td className="px-6 py-3 text-center">
-  {isAdmin ? (
-    editingId === c.id ? (
-      <>
-        <button
-          onClick={() => saveEdit(c)}
-          className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs mr-2"
-        >
-          Save
-        </button>
+                  <button
+                    onClick={() => viewTransactions(c)}
+                    className="bg-green-100 text-green-700 px-3 py-1.5 rounded text-xs inline-flex items-center gap-2"
+                  >
+                    View
+                  </button>
+                </td>
 
-        <button
-          onClick={cancelEdit}
-          className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs"
-        >
-          Cancel
-        </button>
-      </>
-    ) : (
-      <>
-        <button
-          onClick={() => startEdit(c)}
-          className="bg-orange-100 text-orange-700 px-2 py-1 rounded text-xs mr-2"
-        >
-          Update
-        </button>
-
-        <button
-          onClick={() => deleteCustomer(c.id)}
-          className="bg-red-100 text-red-700 px-2 py-1 rounded text-xs"
-        >
-          Deactivate
-        </button>
-      </>
-    )
-  ) : (
-    <span className="text-gray-400 text-xs">View only</span>
-  )}
-</td>
-
-
-
+                <td className="px-6 py-3 text-center">
+                  {isAdmin ? (
+                    editingId === c.id ? (
+                      <div className="inline-flex gap-2">
+                        <button
+                          onClick={() => saveEdit(c)}
+                          className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs inline-flex items-center gap-1"
+                        >
+                          <Save size={14} /> Save
+                        </button>
+                        <button
+                          onClick={cancelEdit}
+                          className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs inline-flex items-center gap-1"
+                        >
+                          <X size={14} /> Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="inline-flex gap-2">
+                        <button
+                          onClick={() => startEdit(c)}
+                          className="bg-orange-100 text-orange-700 px-2 py-1 rounded text-xs inline-flex items-center gap-1"
+                        >
+                          <Edit2 size={14} /> Update
+                        </button>
+                        <button
+                          onClick={() => deleteCustomer(c.id)}
+                          className="bg-red-100 text-red-700 px-2 py-1 rounded text-xs inline-flex items-center gap-1"
+                        >
+                          <Trash2 size={14} /> Deactivate
+                        </button>
+                      </div>
+                    )
+                  ) : (
+                    <span className="text-gray-400 text-xs">View only</span>
+                  )}
+                </td>
               </tr>
             ))}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
+
+      {/* MOBILE / TABLET CARDS */}
+      <div className="lg:hidden divide-y">
+        {filtered.map((c) => {
+          const isEditing = editingId === c.id;
+
+          return (
+            <div key={c.id} className="p-4">
+              {/* Top row */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  {isEditing ? (
+                    <input
+                      className="w-full border px-3 py-2 rounded-lg text-sm font-semibold"
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                      placeholder="Name"
+                    />
+                  ) : (
+                    <div className="font-bold text-base truncate">{c.name || "-"}</div>
+                  )}
+
+                  <div className="mt-1 text-sm text-gray-600">
+                    {isEditing ? (
+                      <input
+                        className="w-full border px-3 py-2 rounded-lg text-sm"
+                        value={editForm.mobile}
+                        onChange={(e) => setEditForm({ ...editForm, mobile: e.target.value })}
+                        placeholder="Mobile"
+                      />
+                    ) : (
+                      <span className="break-all">{c.mobile || "-"}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Admin quick actions */}
+                {isAdmin && !isEditing ? (
+                  <div className="shrink-0 flex gap-2">
+                    <button
+                      onClick={() => startEdit(c)}
+                      className="p-2 rounded-lg bg-orange-100 text-orange-700"
+                      title="Update"
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                    <button
+                      onClick={() => deleteCustomer(c.id)}
+                      className="p-2 rounded-lg bg-red-100 text-red-700"
+                      title="Deactivate"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
+              {/* Stats grid */}
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <div className="bg-gray-50 border rounded-lg p-2 text-center">
+                  <div className="text-[11px] text-gray-500">Used</div>
+                  <div className="font-bold text-sm">
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        min="0"
+                        className="w-full border rounded px-2 py-1 text-center text-sm bg-white"
+                        value={editForm.usedPages}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, usedPages: Number(e.target.value || 0) })
+                        }
+                      />
+                    ) : (
+                      c.usedPages ?? 0
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 border rounded-lg p-2 text-center">
+                  <div className="text-[11px] text-gray-500">Free Earned</div>
+                  <div className="font-bold text-sm">{c.freeEarned ?? 0}</div>
+                </div>
+
+                <div className="bg-gray-50 border rounded-lg p-2 text-center">
+                  <div className="text-[11px] text-gray-500">Free Left</div>
+                  <div className="font-bold text-sm">{c.freeRemaining ?? 0}</div>
+                </div>
+              </div>
+
+              {/* Primary buttons */}
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  disabled={sendingPromo}
+                  onClick={() => promoteCustomer(c)}
+                  className="w-full bg-yellow-100 text-yellow-800 px-3 py-2 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  <Megaphone size={14} />
+                  {sendingPromo ? "Sending..." : "Promote"}
+                </button>
+
+                <button
+                  disabled={sendingInvoice}
+                  onClick={() => notifyCustomer(c)}
+                  className="w-full bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  <MessageSquare size={14} />
+                  {sendingInvoice ? "Sending..." : "Notify"}
+                </button>
+              </div>
+
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => viewTransactions(c)}
+                  className="w-full bg-green-100 text-green-700 px-3 py-2 rounded-lg text-xs font-semibold"
+                >
+                  Transactions
+                </button>
+
+                {isAdmin ? (
+                  isEditing ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => saveEdit(c)}
+                        className="w-full bg-blue-100 text-blue-700 px-3 py-2 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-2"
+                      >
+                        <Save size={14} /> Save
+                      </button>
+                      <button
+                        onClick={cancelEdit}
+                        className="w-full bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-2"
+                      >
+                        <X size={14} /> Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => startEdit(c)}
+                      className="w-full bg-orange-100 text-orange-700 px-3 py-2 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-2"
+                    >
+                      <Edit2 size={14} /> Update
+                    </button>
+                  )
+                ) : (
+                  <button
+                    disabled
+                    className="w-full bg-gray-100 text-gray-400 px-3 py-2 rounded-lg text-xs font-semibold"
+                  >
+                    View only
+                  </button>
+                )}
+              </div>
+
+              {/* If editing, show deactivate under */}
+              {isAdmin && isEditing ? (
+                <button
+                  onClick={() => deleteCustomer(c.id)}
+                  className="mt-2 w-full bg-red-100 text-red-700 px-3 py-2 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-2"
+                >
+                  <Trash2 size={14} /> Deactivate
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
+
+        {filtered.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-500">No customers found.</div>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -5,8 +5,8 @@ export default function AdminLayout() {
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    localStorage.removeItem("admin");
-    navigate("/admin/login");
+    localStorage.removeItem("adminUser"); // ✅ FIXED KEY
+    navigate("/admin/login", { replace: true });
   };
 
   return (

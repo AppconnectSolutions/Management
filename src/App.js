@@ -1,36 +1,55 @@
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+} from "react-router-dom";
 import { useState } from "react";
 
 import Landing from "./pages/Landing";
 import StaffLayout from "./layouts/StaffLayout";
 import AdminLayout from "./components/AdminLayout";
-import Promotions from "./components/Promotions";
-import RoleManagement from "./components/RoleManagement";
+
 import Dashboard from "./components/Dashboard";
 import ProductManager from "./components/ProductManager";
-import CustomerPortal from "./components/CustomerDashboard";
 import CustomerDashboard from "./components/CustomerDashboard";
- import CustomerList from "./components/CustomerList";
+import CustomerList from "./components/CustomerList";
 import CustomerLogin from "./pages/CustomerLogin";
 import AdminLogin from "./pages/AdminLogin";
 import Offers from "./components/Offers";
+import Promotions from "./components/Promotions";
+import RoleManagement from "./components/RoleManagement";
 import AdminCustomerTransactions from "./components/AdminCustomerTransactions";
 import ChangePassword from "./components/ChangePassword";
 import Services from "./components/Services";
 
+/* ============================
+   PROTECTED ADMIN ROUTE
+============================ */
+function ProtectedAdminRoute({ adminUser }) {
+  if (!adminUser) {
+    return <Navigate to="/admin/login" replace />;
+  }
+  return <AdminLayout />;
+}
 
 function App() {
   const [loggedInCustomer, setLoggedInCustomer] = useState(null);
   const [customerTransactions, setCustomerTransactions] = useState([]);
 
+  const [adminUser, setAdminUser] = useState(() => {
+    const saved = localStorage.getItem("adminUser");
+    return saved ? JSON.parse(saved) : null;
+  });
+
   return (
     <BrowserRouter>
       <Routes>
-
-        {/* LANDING */}
+        {/* ============ LANDING ============ */}
         <Route path="/" element={<LandingWrapper />} />
 
-        {/* CUSTOMER */}
+        {/* ============ CUSTOMER ============ */}
         <Route
           path="/customer/*"
           element={
@@ -43,52 +62,56 @@ function App() {
           }
         />
 
-        {/* ADMIN LOGIN */}
-      <Route path="/admin/login" element={<AdminLogin />} />
+        {/* ============ ADMIN LOGIN (PUBLIC) ============ */}
+        <Route
+          path="/admin/login"
+          element={<AdminLogin onLoginSuccess={setAdminUser} />}
+        />
 
-<Route path="/admin" element={<AdminLayout />}>
-  <Route index element={<Navigate to="dashboard" />} />
+        {/* ============ ADMIN (PROTECTED) ============ */}
+        <Route
+          path="/admin"
+          element={<ProtectedAdminRoute adminUser={adminUser} />}
+        >
+          <Route index element={<Navigate to="dashboard" />} />
 
-  <Route path="dashboard" element={<Dashboard />} />
-  <Route path="pos" element={<Services />} />
-  <Route path="products" element={<ProductManager />} />
-  <Route path="customers" element={<CustomerList />} />
-  <Route path="offers" element={<Offers />} />
-  <Route path="promotions" element={<Promotions />} /> 
-  <Route path="roles" element={<RoleManagement />} />
-  {/* ✅ FIX */}
-  <Route
-    path="customers/:mobile/transactions"
-    element={<AdminCustomerTransactions />}
-  />
-</Route>
-
-
-
-        {/* STAFF AREA */}
-        <Route path="/staff" element={<StaffLayoutWrapper />}>
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="pos" element={<Services />} />
           <Route path="products" element={<ProductManager />} />
-          <Route path="customers" element={<CustomerDashboard />} />
+          <Route path="customers" element={<CustomerList />} />
+          <Route path="offers" element={<Offers />} />
+          <Route path="promotions" element={<Promotions />} />
+          <Route path="roles" element={<RoleManagement />} />
+
+          <Route
+            path="customers/:mobile/transactions"
+            element={<AdminCustomerTransactions />}
+          />
         </Route>
 
+        {/* ============ STAFF ============ */}
+        <Route path="/staff/*" element={<StaffLayoutWrapper />} />
       </Routes>
     </BrowserRouter>
   );
 }
 
-/* ---------------- LANDING ---------------- */
+/* ============================
+   LANDING WRAPPER
+============================ */
 function LandingWrapper() {
   const nav = useNavigate();
   return (
     <Landing
-      onStaff={() => nav("/staff/dashboard")}
+      onStaff={() => nav("/admin/login")}
       onCustomer={() => nav("/customer")}
     />
   );
 }
 
-/* ---------------- STAFF LAYOUT ---------------- */
+/* ============================
+   STAFF LAYOUT
+============================ */
 function StaffLayoutWrapper() {
   const nav = useNavigate();
   return (
@@ -102,7 +125,9 @@ function StaffLayoutWrapper() {
   );
 }
 
-/* ---------------- CUSTOMER ROUTES ---------------- */
+/* ============================
+   CUSTOMER ROUTES
+============================ */
 function CustomerRoutes({
   loggedInCustomer,
   setLoggedInCustomer,

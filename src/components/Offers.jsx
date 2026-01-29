@@ -1,13 +1,28 @@
-import { useState, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { Edit, Trash2 } from "lucide-react";
+import { Edit2, Trash2, Save, X } from "lucide-react";
 
-/* ================= AUTH ================= */
-const loggedUser = JSON.parse(localStorage.getItem("admin") || "null");
-const isAdmin = loggedUser?.role === "ADMIN";
+/* ================= AUTH (SAFE PARSE) ================= */
+function safeParseJSON(v) {
+  try {
+    return JSON.parse(v || "null");
+  } catch {
+    return null;
+  }
+}
 
 export default function OfferManagement() {
   const API_URL = process.env.REACT_APP_API_URL || "https://api.digicopy.in";
+
+  const loggedUser = useMemo(
+    () => safeParseJSON(localStorage.getItem("adminUser")),
+    []
+  );
+ const role = String(loggedUser?.role || "").toUpperCase();
+const isAdmin = role === "ADMIN" || role === "OWNER";
+
+// ✅ staff access controlled by approved flag
+const canManage = isAdmin || Number(loggedUser?.approved) === 1;
 
   const [products, setProducts] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -20,12 +35,20 @@ export default function OfferManagement() {
 
   const [loading, setLoading] = useState(false);
   const [editingOfferId, setEditingOfferId] = useState(null);
+  const [errorMsg, setErrorMsg] = useState("");
 
   /* ================= HELPERS ================= */
-  const getProductId = (o) => o?.product_id ?? o?.productId ?? null;
-  const getRoleId = (o) => o?.role_id ?? o?.roleId ?? null;
-  const getBuyQty = (o) => o?.buy_quantity ?? o?.buyQuantity ?? 0;
-  const getFreeQty = (o) => o?.free_quantity ?? o?.freeQuantity ?? 0;
+  const getOfferId = (o) => o?.id ?? o?._id ?? o?.offer_id ?? null;
+  const getProductId = (o) => Number(o?.product_id ?? o?.productId ?? 0) || null;
+  const getRoleId = (o) => {
+    const v = o?.role_id ?? o?.roleId;
+    if (v === null || v === undefined || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const getBuyQty = (o) => Number(o?.buy_quantity ?? o?.buyQuantity ?? 0) || 0;
+  const getFreeQty = (o) =>
+    Number(o?.free_quantity ?? o?.freeQuantity ?? 0) || 0;
 
   const productById = useMemo(() => {
     const m = new Map();
@@ -56,9 +79,21 @@ export default function OfferManagement() {
   };
 
   useEffect(() => {
-    fetchProducts();
-    fetchRoles();
-    fetchOffers();
+    let alive = true;
+
+    (async () => {
+      try {
+        setErrorMsg("");
+        await Promise.all([fetchProducts(), fetchRoles(), fetchOffers()]);
+      } catch (e) {
+        if (alive) setErrorMsg(e?.message || "Failed to load data");
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ================= FORM ================= */
@@ -71,7 +106,8 @@ export default function OfferManagement() {
   };
 
   const handleSaveOffer = async () => {
-    if (!isAdmin) return;
+   if (!canManage) return;
+
 
     if (!selectedProduct || !buyQuantity || !freeQuantity) {
       alert("Please fill all fields");
@@ -87,6 +123,7 @@ export default function OfferManagement() {
 
     try {
       setLoading(true);
+      setErrorMsg("");
 
       if (editingOfferId) {
         await axios.put(`${API_URL}/api/offers/${editingOfferId}`, payload);
@@ -97,8 +134,9 @@ export default function OfferManagement() {
       }
 
       resetForm();
-      fetchOffers();
-    } catch {
+      await fetchOffers();
+    } catch (e) {
+      setErrorMsg(e?.response?.data?.message || e?.message || "Failed to save offer");
       alert("Failed to save offer");
     } finally {
       setLoading(false);
@@ -106,96 +144,207 @@ export default function OfferManagement() {
   };
 
   const handleEdit = (offer) => {
-    if (!isAdmin) return;
+   if (!canManage) return;
 
-    setSelectedProduct(String(getProductId(offer)));
+
+    setSelectedProduct(String(getProductId(offer) || ""));
     setSelectedRole(getRoleId(offer) ? String(getRoleId(offer)) : "");
     setBuyQuantity(String(getBuyQty(offer)));
     setFreeQuantity(String(getFreeQty(offer)));
-    setEditingOfferId(offer.id);
+    setEditingOfferId(getOfferId(offer));
   };
 
   const handleDelete = async (id) => {
-    if (!isAdmin) return;
+   if (!canManage) return;
+
     if (!window.confirm("Delete this offer?")) return;
 
-    await axios.delete(`${API_URL}/api/offers/${id}`);
-    fetchOffers();
+    try {
+      setLoading(true);
+      await axios.delete(`${API_URL}/api/offers/${id}`);
+      await fetchOffers();
+    } catch (e) {
+      alert(e?.response?.data?.message || "Delete failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  /* ================= UI ================= */
+  /* ================= UI HELPERS ================= */
+  const OfferCard = ({ o }) => {
+    const id = getOfferId(o);
+    const pid = getProductId(o);
+    const rid = getRoleId(o);
+
+    const productName = productById.get(pid)?.name || "—";
+    const roleName = rid ? roleById.get(rid)?.role_name || "—" : "All Roles";
+
+    return (
+      <div className="p-4 border-b">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="font-bold truncate">{productName}</div>
+            <div className="text-sm text-gray-500 truncate">{roleName}</div>
+          </div>
+
+          {isAdmin ? (
+            <div className="shrink-0 flex gap-2">
+              <button
+                onClick={() => handleEdit(o)}
+                className="p-2 rounded-lg bg-blue-100 text-blue-700"
+                title="Edit"
+                disabled={loading}
+              >
+                <Edit2 size={16} />
+              </button>
+              <button
+                onClick={() => handleDelete(id)}
+                className="p-2 rounded-lg bg-red-100 text-red-700"
+                title="Delete"
+                disabled={loading}
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="bg-gray-50 border rounded-lg p-2 text-center">
+            <div className="text-[11px] text-gray-500">Buy</div>
+            <div className="font-bold">{getBuyQty(o)}</div>
+          </div>
+          <div className="bg-gray-50 border rounded-lg p-2 text-center">
+            <div className="text-[11px] text-gray-500">Free</div>
+            <div className="font-bold">{getFreeQty(o)}</div>
+          </div>
+        </div>
+
+        {!isAdmin ? (
+          <div className="mt-3 text-xs text-gray-400">View only</div>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-4 text-indigo-700">
-        Offer Management
-      </h2>
+    <div className="p-4 sm:p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+        <h2 className="text-xl sm:text-2xl font-bold text-indigo-700">
+          Offer Management
+        </h2>
+        {loading ? (
+          <span className="text-xs text-gray-500">Working...</span>
+        ) : null}
+      </div>
+
+      {errorMsg ? (
+        <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">
+          {errorMsg}
+        </div>
+      ) : null}
 
       {/* 🔐 ADMIN ONLY FORM */}
       {isAdmin && (
-        <div className="flex flex-col lg:flex-row gap-4 mb-6">
-          <select
-            value={selectedProduct}
-            onChange={(e) => setSelectedProduct(e.target.value)}
-            className="border p-2 rounded w-full lg:w-64"
-          >
-            <option value="">Select Product</option>
-            {products.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+        <div className="bg-white border rounded-xl p-4 mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-6 gap-3">
+            <div className="lg:col-span-2">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">
+                Product
+              </label>
+              <select
+                value={selectedProduct}
+                onChange={(e) => setSelectedProduct(e.target.value)}
+                className="border p-2 rounded-lg w-full"
+                disabled={loading}
+              >
+                <option value="">Select Product</option>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <select
-            value={selectedRole}
-            onChange={(e) => setSelectedRole(e.target.value)}
-            className="border p-2 rounded w-full lg:w-64"
-          >
-            <option value="">All Roles</option>
-            {roles.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.role_name}
-              </option>
-            ))}
-          </select>
+            <div className="lg:col-span-2">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">
+                Role
+              </label>
+              <select
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value)}
+                className="border p-2 rounded-lg w-full"
+                disabled={loading}
+              >
+                <option value="">All Roles</option>
+                {roles.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.role_name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <input
-            type="number"
-            placeholder="Buy Qty"
-            value={buyQuantity}
-            onChange={(e) => setBuyQuantity(e.target.value)}
-            className="border p-2 rounded w-32"
-          />
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">
+                Buy Qty
+              </label>
+              <input
+                type="number"
+                min="1"
+                inputMode="numeric"
+                placeholder="Buy Qty"
+                value={buyQuantity}
+                onChange={(e) => setBuyQuantity(e.target.value)}
+                className="border p-2 rounded-lg w-full"
+                disabled={loading}
+              />
+            </div>
 
-          <input
-            type="number"
-            placeholder="Free Qty"
-            value={freeQuantity}
-            onChange={(e) => setFreeQuantity(e.target.value)}
-            className="border p-2 rounded w-32"
-          />
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">
+                Free Qty
+              </label>
+              <input
+                type="number"
+                min="1"
+                inputMode="numeric"
+                placeholder="Free Qty"
+                value={freeQuantity}
+                onChange={(e) => setFreeQuantity(e.target.value)}
+                className="border p-2 rounded-lg w-full"
+                disabled={loading}
+              />
+            </div>
+          </div>
 
-          <button
-            onClick={handleSaveOffer}
-            className="bg-indigo-600 text-white px-4 py-2 rounded"
-          >
-            {editingOfferId ? "Update Offer" : "Save Offer"}
-          </button>
-
-          {editingOfferId && (
+          <div className="mt-3 flex flex-col sm:flex-row gap-2 sm:justify-end">
             <button
-              onClick={resetForm}
-              className="bg-gray-400 text-white px-4 py-2 rounded"
+              onClick={handleSaveOffer}
+              className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-60"
+              disabled={loading}
             >
-              Cancel
+              <Save size={16} />
+              {editingOfferId ? "Update Offer" : "Save Offer"}
             </button>
-          )}
+
+            {editingOfferId && (
+              <button
+                onClick={resetForm}
+                className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-semibold inline-flex items-center justify-center gap-2"
+                disabled={loading}
+              >
+                <X size={16} /> Cancel
+              </button>
+            )}
+          </div>
         </div>
       )}
 
-      {/* TABLE */}
-      <div className="bg-white shadow rounded-lg overflow-x-auto">
-        <table className="min-w-full">
+      {/* DESKTOP TABLE */}
+      <div className="hidden lg:block bg-white shadow rounded-lg overflow-x-auto">
+        <table className="min-w-full text-sm">
           <thead className="bg-gray-50">
             <tr>
               <th className="p-3 text-left">Product</th>
@@ -214,46 +363,56 @@ export default function OfferManagement() {
                 </td>
               </tr>
             ) : (
-              offers.map((o) => (
-                <tr key={o.id} className="border-t">
-                  <td className="p-3">
-                    {productById.get(getProductId(o))?.name || "—"}
-                  </td>
-                  <td className="p-3">
-                    {getRoleId(o)
-                      ? roleById.get(getRoleId(o))?.role_name
-                      : "All"}
-                  </td>
-                  <td className="p-3">{getBuyQty(o)}</td>
-                  <td className="p-3">{getFreeQty(o)}</td>
+              offers.map((o) => {
+                const pid = getProductId(o);
+                const rid = getRoleId(o);
 
-                  <td className="p-3">
-                    {isAdmin ? (
-                      <div className="flex gap-3">
-                        <button
-                          onClick={() => handleEdit(o)}
-                          className="text-blue-600 flex items-center gap-1"
-                        >
-                          <Edit size={16} /> Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(o.id)}
-                          className="text-red-600 flex items-center gap-1"
-                        >
-                          <Trash2 size={16} /> Delete
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-gray-400 text-sm">
-                        View only
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))
+                return (
+                  <tr key={getOfferId(o)} className="border-t">
+                    <td className="p-3">{productById.get(pid)?.name || "—"}</td>
+                    <td className="p-3">
+                      {rid ? roleById.get(rid)?.role_name || "—" : "All"}
+                    </td>
+                    <td className="p-3">{getBuyQty(o)}</td>
+                    <td className="p-3">{getFreeQty(o)}</td>
+
+                    <td className="p-3">
+                      {isAdmin ? (
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => handleEdit(o)}
+                            className="text-blue-600 flex items-center gap-1"
+                            disabled={loading}
+                          >
+                            <Edit2 size={16} /> Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(getOfferId(o))}
+                            className="text-red-600 flex items-center gap-1"
+                            disabled={loading}
+                          >
+                            <Trash2 size={16} /> Delete
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-sm">View only</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* MOBILE CARDS */}
+      <div className="lg:hidden bg-white border rounded-xl overflow-hidden">
+        {offers.length === 0 ? (
+          <div className="p-6 text-center text-gray-500 text-sm">No offers found</div>
+        ) : (
+          offers.map((o) => <OfferCard key={getOfferId(o)} o={o} />)
+        )}
       </div>
     </div>
   );
