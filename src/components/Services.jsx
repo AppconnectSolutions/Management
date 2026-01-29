@@ -694,14 +694,23 @@ const { handleCheckout, loading } = useCheckout({
                   <p className="text-xs uppercase opacity-70 mb-2">
                     Selected Customer
                   </p>
-                  <div className="flex justify-between items-center">
-                    <p className="text-xl font-extrabold tracking-wide">
-                      {selectedCustomer.name}
-                    </p>
-                    <p className="text-xl font-extrabold tracking-wider font-mono">
-                      {selectedCustomer.mobile}
-                    </p>
-                  </div>
+                  <div className="flex justify-between items-start">
+  <div>
+    <p className="text-xl font-extrabold tracking-wide">
+      {selectedCustomer.name}
+    </p>
+
+    {/* ROLE BADGE */}
+    <span className="inline-block mt-1 px-2 py-0.5 text-[10px] font-bold rounded-full bg-indigo-100 text-indigo-700 uppercase tracking-wide">
+      {selectedCustomer.role_name || "Default"}
+    </span>
+  </div>
+
+  <p className="text-xl font-extrabold tracking-wider font-mono">
+    {selectedCustomer.mobile}
+  </p>
+</div>
+
                 </div>
 
                 {/* XEROX LOYALTY */}
@@ -737,14 +746,26 @@ const { handleCheckout, loading } = useCheckout({
                     />
                   </div>
 
-                  <div className="flex justify-between text-xs text-slate-500 mt-2">
-                    <span>
-                      Total Taken: <b>{totalTaken}</b>
-                    </span>
-                    <span>
-                      Cycles: <b>{cycleCount}</b>
-                    </span>
-                  </div>
+                 <div className="flex justify-between items-end mt-3">
+  <div>
+    <p className="text-[10px] uppercase text-slate-500 font-semibold">
+      Total Taken
+    </p>
+    <p className="text-2xl font-extrabold text-slate-900">
+      {totalTaken}
+    </p>
+  </div>
+
+  <div className="text-right">
+    <p className="text-[10px] uppercase text-slate-500 font-semibold">
+      Cycles
+    </p>
+    <p className="text-lg font-bold text-slate-700">
+      {cycleCount}
+    </p>
+  </div>
+</div>
+
 
                   <p className="text-xs text-center text-slate-400 mt-2">
                     Print {xeroxReward.next_unlock_in ?? 0} more PAID pages to unlock +{freeQty || 0} FREE!

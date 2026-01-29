@@ -1,21 +1,23 @@
-import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { useState } from "react";
 
 import Landing from "./pages/Landing";
 import StaffLayout from "./layouts/StaffLayout";
-
-
+import AdminLayout from "./components/AdminLayout";
+import Promotions from "./components/Promotions";
+import RoleManagement from "./components/RoleManagement";
 import Dashboard from "./components/Dashboard";
 import ProductManager from "./components/ProductManager";
 import CustomerPortal from "./components/CustomerDashboard";
+import CustomerDashboard from "./components/CustomerDashboard";
+ import CustomerList from "./components/CustomerList";
 import CustomerLogin from "./pages/CustomerLogin";
 import AdminLogin from "./pages/AdminLogin";
-import CustomerDashboard from "./components/CustomerDashboard";
-import AdminDashboard from "./components/AdminDashboard";
 import Offers from "./components/Offers";
 import AdminCustomerTransactions from "./components/AdminCustomerTransactions";
-
 import ChangePassword from "./components/ChangePassword";
+import Services from "./components/Services";
+
 
 function App() {
   const [loggedInCustomer, setLoggedInCustomer] = useState(null);
@@ -24,10 +26,11 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Landing */}
+
+        {/* LANDING */}
         <Route path="/" element={<LandingWrapper />} />
 
-        {/* Customer routes */}
+        {/* CUSTOMER */}
         <Route
           path="/customer/*"
           element={
@@ -40,55 +43,57 @@ function App() {
           }
         />
 
-        {/* Admin routes */}
-        <Route path="/admin" element={<AdminLogin />} />
-        <Route
-          path="/admin/dashboard"
-          element={
-            <AdminDashboard
-              customers={[]} 
-              products={[]} 
-              transactions={[]} 
-            />
-          }
-        />
-<Route
-        path="/admin/offers"
-        element={<Offers />} // ✅ Add offers here
-      />
-      {/* ✅ ADMIN → CUSTOMER TRANSACTIONS (ADD THIS) */}
-<Route
-  path="/admin/customers/:mobile/transactions"
-  element={<AdminCustomerTransactions />}
-/>
-        {/* Staff routes */}
-        <Route path="/staff" element={<StaffWrapper />}>
-          
+        {/* ADMIN LOGIN */}
+      <Route path="/admin/login" element={<AdminLogin />} />
+
+<Route path="/admin" element={<AdminLayout />}>
+  <Route index element={<Navigate to="dashboard" />} />
+
+  <Route path="dashboard" element={<Dashboard />} />
+  <Route path="pos" element={<Services />} />
+  <Route path="products" element={<ProductManager />} />
+  <Route path="customers" element={<CustomerList />} />
+  <Route path="offers" element={<Offers />} />
+  <Route path="promotions" element={<Promotions />} /> 
+  <Route path="roles" element={<RoleManagement />} />
+  {/* ✅ FIX */}
+  <Route
+    path="customers/:mobile/transactions"
+    element={<AdminCustomerTransactions />}
+  />
+</Route>
+
+
+
+        {/* STAFF AREA */}
+        <Route path="/staff" element={<StaffLayoutWrapper />}>
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="products" element={<ProductManager />} />
-          <Route path="customers" element={<CustomerPortal />} />
+          <Route path="customers" element={<CustomerDashboard />} />
         </Route>
+
       </Routes>
     </BrowserRouter>
   );
 }
 
+/* ---------------- LANDING ---------------- */
 function LandingWrapper() {
   const nav = useNavigate();
   return (
     <Landing
-      onStaff={() => nav("/staff/pos")}
+      onStaff={() => nav("/staff/dashboard")}
       onCustomer={() => nav("/customer")}
     />
   );
 }
 
-function StaffWrapper() {
+/* ---------------- STAFF LAYOUT ---------------- */
+function StaffLayoutWrapper() {
   const nav = useNavigate();
   return (
     <StaffLayout onLogout={() => nav("/")}>
       <Routes>
-        
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="products" element={<ProductManager />} />
         <Route path="customers" element={<CustomerDashboard />} />
@@ -97,6 +102,7 @@ function StaffWrapper() {
   );
 }
 
+/* ---------------- CUSTOMER ROUTES ---------------- */
 function CustomerRoutes({
   loggedInCustomer,
   setLoggedInCustomer,
@@ -116,8 +122,9 @@ function CustomerRoutes({
               setCustomerTransactions(transactions || []);
 
               if (forcePasswordChange) {
-                // Redirect to change-password page
-                navigate("/customer/change-password", { state: { customerId: customer.id } });
+                navigate("/customer/change-password", {
+                  state: { customerId: customer.id },
+                });
               } else {
                 navigate("/customer/dashboard");
               }
@@ -125,6 +132,7 @@ function CustomerRoutes({
           />
         }
       />
+
       <Route
         path="dashboard"
         element={
@@ -138,11 +146,11 @@ function CustomerRoutes({
               }}
             />
           ) : (
-            <p>Please login first.</p>
+            <Navigate to="/customer" />
           )
         }
       />
-      {/* ✅ Pass loggedInCustomer prop here */}
+
       <Route
         path="change-password"
         element={<ChangePassword loggedInCustomer={loggedInCustomer} />}
@@ -150,4 +158,5 @@ function CustomerRoutes({
     </Routes>
   );
 }
+
 export default App;

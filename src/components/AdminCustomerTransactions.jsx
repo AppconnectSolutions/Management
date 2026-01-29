@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import Invoice from "./Invoice";
+import { ChevronDown, ChevronRight, FileDown, Layers } from "lucide-react";
 
 /* ================= HELPERS ================= */
 function getDefaultFromDate() {
@@ -15,233 +16,315 @@ function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
-/* ================= COMPONENT ================= */
+function getProductIcon(name = "") {
+  const n = name.toLowerCase();
+  if (n.includes("xerox") || n.includes("print")) return "🖨️";
+  if (n.includes("binding")) return "📘";
+  if (n.includes("lamination")) return "📄";
+  return "📦";
+}
+
 export default function AdminCustomerTransactions() {
   const { mobile } = useParams();
+  const navigate = useNavigate();
   const invoiceRef = useRef(null);
 
-  const [data, setData] = useState({ customer: {}, transactions: [] });
+  const [customer, setCustomer] = useState({});
+  const [transactions, setTransactions] = useState([]);
+  const [itemsByTxn, setItemsByTxn] = useState({});
+  const [collapsedDates, setCollapsedDates] = useState({});
   const [loading, setLoading] = useState(true);
-  const [invoiceData, setInvoiceData] = useState(null);
 
   const [fromDate, setFromDate] = useState(getDefaultFromDate());
   const [toDate, setToDate] = useState(getTodayDate());
 
-  const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+  const [pdfInvoiceData, setPdfInvoiceData] = useState(null);
+
+  const API_URL =
+    process.env.REACT_APP_API_URL || "http://localhost:5000";
 
   /* ================= LOAD DATA ================= */
   useEffect(() => {
     const load = async () => {
-      try {
-        const res = await fetch(
-          `${API_URL}/api/transactions/customer/${mobile}`
+      setLoading(true);
+
+      const res = await fetch(
+        `${API_URL}/api/transactions/customer/${mobile}`
+      );
+      const json = await res.json();
+
+      setCustomer(json.customer || {});
+      setTransactions(json.transactions || []);
+
+      const map = {};
+      for (const t of json.transactions || []) {
+        const r = await fetch(
+          `${API_URL}/api/transactions/items/${t.transactionId}`
         );
-        const json = await res.json();
-        setData(json);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
+        map[t.transactionId] = await r.json();
       }
+
+      setItemsByTxn(map);
+      setLoading(false);
     };
+
     load();
   }, [mobile, API_URL]);
 
-  if (loading) return <div className="p-10">Loading…</div>;
-  if (!data?.transactions)
-    return <div className="p-10 text-gray-500">No transactions</div>;
+  if (loading) {
+    return <div className="p-6 text-center">Loading…</div>;
+  }
 
-  const { customer, transactions } = data;
-
-  /* ================= DATE FILTER ================= */
-  const filteredTransactions = transactions.filter((t) => {
+  /* ================= FILTER + GROUP ================= */
+  const filtered = transactions.filter((t) => {
     const d = new Date(t.date).toISOString().slice(0, 10);
     return d >= fromDate && d <= toDate;
   });
 
-  /* ================= VIEW INVOICE ================= */
- const openInvoice = async (txnId) => {
+  const grouped = filtered.reduce((acc, t) => {
+    const key = new Date(t.date).toISOString().slice(0, 10);
+    acc[key] = acc[key] || [];
+    acc[key].push(t);
+    return acc;
+  }, {});
+
+  /* ================= DOWNLOAD INVOICE PDF ================= */
+const downloadDateInvoicesPDF = async (dateKey, txns) => {
   try {
-    const res = await fetch(`${API_URL}/api/transactions/${txnId}`);
+    const pdf = new jsPDF("p", "mm", "a4");
 
-    if (!res.ok) {
-      const text = await res.text(); // ⛔ do NOT parse as JSON
-      console.error("Invoice API error:", text);
-      return;
+    const pageWidth = 210;
+    const pageHeight = 297;
+
+    for (let i = 0; i < txns.length; i++) {
+      const txnId = txns[i].transactionId;
+
+      // 1️⃣ Fetch invoice data
+      const res = await fetch(`${API_URL}/api/transactions/${txnId}`);
+      const json = await res.json();
+
+      setPdfInvoiceData(json.transaction);
+
+      // 2️⃣ Wait for invoice render
+      await new Promise((r) => setTimeout(r, 400));
+
+      if (!invoiceRef.current) continue;
+
+      // 3️⃣ Capture invoice
+      const canvas = await html2canvas(invoiceRef.current, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+      });
+
+      const imgData = canvas.toDataURL("image/jpeg", 1.0);
+
+      // 4️⃣ Calculate scaling
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // 5️⃣ Add first page
+      if (i > 0) pdf.addPage();
+
+      pdf.addImage(
+        imgData,
+        "JPEG",
+        0,
+        position,
+        imgWidth,
+        imgHeight
+      );
+
+      heightLeft -= pageHeight;
+
+      // 6️⃣ Split overflow safely into pages
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(
+          imgData,
+          "JPEG",
+          0,
+          position,
+          imgWidth,
+          imgHeight
+        );
+        heightLeft -= pageHeight;
+      }
     }
 
-    const json = await res.json();
-    console.log("Invoice API response:", json);
-
-    if (json.transaction) {
-      setInvoiceData(json.transaction);
-    } else {
-      console.error("Missing transaction key", json);
-    }
+    pdf.save(`Invoices_${dateKey}.pdf`);
+    setPdfInvoiceData(null);
   } catch (err) {
-    console.error("Invoice fetch failed:", err);
+    console.error("PDF error", err);
   }
 };
 
 
-  /* ================= DOWNLOAD EXCEL ================= */
-  const downloadExcel = () => {
-    const rows = [
-      ["Transaction ID", "Date", "Amount"],
-      ...filteredTransactions.map((t) => [
-        t.transactionId,
-        new Date(t.date).toISOString().replace("T", " ").slice(0, 19),
-        t.totalAmount,
-      ]),
-    ];
 
-    const csv = rows.map((r) => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `transactions_${fromDate}_to_${toDate}.csv`;
-    a.click();
-  };
-
-  /* ================= DOWNLOAD INVOICE PDF ================= */
-  const downloadInvoicePDF = async () => {
-    const canvas = await html2canvas(invoiceRef.current, {
-      scale: 2,
-      backgroundColor: "#ffffff",
-    });
-
-    const imgData = canvas.toDataURL("image/png");
-    const pdf = new jsPDF("p", "mm", "a4");
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const imgHeight = (canvas.height * pdfWidth) / canvas.width;
-
-    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, imgHeight);
-    pdf.save(`invoice_${invoiceData.transactionId}.pdf`);
-  };
 
   return (
-    <div className="p-6 bg-slate-100 min-h-screen">
-      {/* ================= CUSTOMER HEADER ================= */}
-      <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-xl px-8 py-6 mb-6">
-        <div className="grid grid-cols-2 gap-20">
+    <div className="p-4 sm:p-6 bg-slate-100 min-h-screen">
+      {/* ================= HEADER ================= */}
+      <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-slate-800 rounded-xl px-4 sm:px-8 py-5 mb-6 flex flex-col sm:flex-row gap-4 sm:gap-0 justify-between items-start sm:items-center shadow-lg">
+        <div className="flex flex-col sm:flex-row gap-6 sm:gap-16">
           <div>
-            <p className="text-slate-300 text-sm">Customer Name</p>
-            <p className="text-white text-2xl font-bold">
+            <p className="text-slate-400 text-xs">Name</p>
+            <p className="text-white text-xl sm:text-2xl font-bold">
               {customer.name}
             </p>
           </div>
           <div>
-            <p className="text-slate-300 text-sm">Mobile</p>
-            <p className="text-white text-xl font-mono">
+            <p className="text-slate-400 text-xs">Phone</p>
+            <p className="text-white font-mono text-sm sm:text-base">
               {customer.mobile}
             </p>
           </div>
         </div>
-      </div>
-
-      {/* ================= FILTER BAR ================= */}
-      <div className="bg-white rounded-xl p-4 mb-4 flex flex-wrap gap-4 items-end shadow">
-        <div>
-          <label className="text-xs text-gray-600">From Date</label>
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            className="border px-3 py-2 rounded text-sm"
-          />
-        </div>
-
-        <div>
-          <label className="text-xs text-gray-600">To Date</label>
-          <input
-            type="date"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-            className="border px-3 py-2 rounded text-sm"
-          />
-        </div>
 
         <button
-          onClick={downloadExcel}
-          className="bg-green-600 text-white px-5 py-2 rounded text-sm"
+          onClick={() => navigate("/admin/customers")}
+          className="text-white font-semibold text-sm hover:underline"
         >
-          Download Excel
+          ← Back
         </button>
       </div>
 
-      {/* ================= TABLE ================= */}
-      <div className="bg-white rounded-xl shadow overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="px-4 py-3 text-left">Txn ID</th>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3 text-right">Amount</th>
-              <th className="px-4 py-3 text-center">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredTransactions.map((t) => (
-              <tr key={t.transactionId} className="border-t">
-                <td className="px-4 py-3 font-mono">
-                  #{t.transactionId}
-                </td>
-                <td className="px-4 py-3">
-                  {new Date(t.date).toLocaleString()}
-                </td>
-                <td className="px-4 py-3 text-right font-bold">
-                  ₹{t.totalAmount}
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <button
-                    onClick={() => openInvoice(t.transactionId)}
-                    className="bg-indigo-600 text-white px-3 py-1 rounded text-xs"
-                  >
-                    View Invoice
-                  </button>
-                </td>
-              </tr>
-            ))}
-
-            {filteredTransactions.length === 0 && (
-              <tr>
-                <td colSpan="4" className="p-6 text-center text-gray-400">
-                  No transactions found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      {/* ================= FILTER ================= */}
+      <div className="bg-white rounded-xl p-4 mb-6 flex flex-col sm:flex-row gap-3 shadow">
+        <input
+          type="date"
+          value={fromDate}
+          onChange={(e) => setFromDate(e.target.value)}
+          className="border px-3 py-2 rounded text-sm w-full sm:w-auto"
+        />
+        <input
+          type="date"
+          value={toDate}
+          onChange={(e) => setToDate(e.target.value)}
+          className="border px-3 py-2 rounded text-sm w-full sm:w-auto"
+        />
       </div>
 
-      {/* ================= INVOICE POPUP ================= */}
-      {invoiceData && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="relative">
-            <div ref={invoiceRef}>
-              <Invoice
-                data={invoiceData}
-                onClose={() => setInvoiceData(null)}
-              />
-            </div>
+      {/* ================= DATES ================= */}
+      <div className="space-y-6">
+        {Object.entries(grouped).map(([date, txns]) => {
+          const collapsed = collapsedDates[date];
 
-            <div className="flex gap-3 justify-center mt-4">
-              <button
-                onClick={downloadInvoicePDF}
-                className="bg-green-600 text-white px-4 py-2 rounded text-sm"
-              >
-                Download PDF
-              </button>
-              <button
-                onClick={() => setInvoiceData(null)}
-                className="bg-gray-300 px-4 py-2 rounded text-sm"
-              >
-                Close
-              </button>
+          const rows = txns.flatMap((t) =>
+            (itemsByTxn[t.transactionId] || []).map((i) => ({
+              bill: t.transactionId,
+              ...i,
+            }))
+          );
+
+          const totalQty = rows.reduce(
+            (s, r) => s + Number(r.quantity || 0),
+            0
+          );
+
+          return (
+            <div key={date} className="bg-white rounded-xl shadow border">
+              {/* DATE HEADER */}
+              <div className="flex flex-col sm:flex-row justify-between gap-3 items-start sm:items-center bg-slate-800 text-white px-4 sm:px-6 py-4">
+                <div
+                  className="flex items-center gap-3 cursor-pointer"
+                  onClick={() =>
+                    setCollapsedDates({
+                      ...collapsedDates,
+                      [date]: !collapsed,
+                    })
+                  }
+                >
+                  {collapsed ? <ChevronRight /> : <ChevronDown />}
+                  <span className="font-semibold">
+                    {new Date(date).toDateString()}
+                  </span>
+                  <span className="text-xs bg-slate-600 px-2 py-0.5 rounded">
+                    {txns.length} Bills
+                  </span>
+                </div>
+
+          
+                <div className="flex items-center gap-4">
+  <span className="text-sm flex gap-1">
+    <Layers size={14} /> Qty: {totalQty}
+  </span>
+
+{/* <button
+  onClick={() => downloadDateInvoicesPDF(date, txns)}
+  className="bg-green-600 text-white text-xs px-4 py-2 rounded flex items-center gap-2"
+>
+  <FileDown size={14} /> PDF
+</button> */}
+
+
+</div>
+
+              </div>
+
+              {!collapsed && (
+                <div className="overflow-x-auto">
+                  <table className="min-w-[640px] w-full text-sm">
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Bill</th>
+                        <th className="px-3 py-2 text-left">Item</th>
+                        <th className="px-3 py-2 text-center">Qty</th>
+                        <th className="px-3 py-2 text-right">Rate</th>
+                        <th className="px-3 py-2 text-right">Amount</th>
+                        
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r, idx) => (
+                        <tr key={idx} className="border-t">
+                          <td className="px-3 py-2 font-mono">
+                            #{r.bill}
+                          </td>
+                          <td className="px-3 py-2">
+                            {getProductIcon(r.productName)}{" "}
+                            {r.productName}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {r.quantity}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            ₹{r.unit_price}
+                          </td>
+                          <td className="px-3 py-2 text-right font-semibold">
+                            ₹{r.line_total}
+                          </td>
+                          
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
+          );
+        })}
+      </div>
+
+      {/* ================= HIDDEN INVOICE ================= */}
+      <div
+        style={{
+          position: "fixed",
+          left: "-9999px",
+          top: 0,
+          width: "320px",
+        }}
+      >
+        {pdfInvoiceData && (
+          <div ref={invoiceRef}>
+            <Invoice data={pdfInvoiceData} />
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
