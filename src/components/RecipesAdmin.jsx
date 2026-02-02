@@ -4,7 +4,8 @@ import axios from "axios";
 export default function RecipesAdmin() {
   const [recipes, setRecipes] = useState([]);
   const [form, setForm] = useState({ title: "", description: "", image: null, preview: "" });
-const API_URL = process.env.REACT_APP_API_URL;
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
 
   // Fetch recipes
   const fetchRecipes = async () => {

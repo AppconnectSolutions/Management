@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 
-const API_URL = "http://localhost:5000";
+
 
 export default function NavbarAdmin() {
   const [formData, setFormData] = useState({
@@ -14,6 +14,8 @@ export default function NavbarAdmin() {
     label5: "Contact Us",
     label6: "Combos",
   });
+ 
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
   const [logoPreview, setLogoPreview] = useState("");
 

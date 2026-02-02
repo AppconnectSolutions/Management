@@ -9,7 +9,8 @@ export default function TopPicksAdmin() {
     image: null,
     preview: "",
   });
-const API_URL = process.env.REACT_APP_API_URL;
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
 
   const [products, setProducts] = useState(
     Array(4).fill().map(() => ({

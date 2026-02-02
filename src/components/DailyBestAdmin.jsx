@@ -11,7 +11,8 @@ export default function DailyBestAdmin() {
     { title: "", description: "", rating: "", ctaLabel: "", image: null, preview: "" },
     { title: "", description: "", rating: "", ctaLabel: "", image: null, preview: "" },
   ]);
-const API_URL = process.env.REACT_APP_API_URL;
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
 
   // Fetch existing hero + products
   useEffect(() => {
