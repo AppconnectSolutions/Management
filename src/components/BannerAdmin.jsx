@@ -12,6 +12,7 @@ export default function BannerAdmin() {
     { file: null, preview: "" },
     { file: null, preview: "" },
   ]);
+const API_URL = process.env.REACT_APP_API_URL;
 
   const handleFileChange = (index, file) => {
     const updated = [...slides];
@@ -31,7 +32,7 @@ export default function BannerAdmin() {
         if (!slide.file) continue;
         const formData = new FormData();
         formData.append("slide", slide.file);
-        await axios.post("http://localhost:5000/api/banner", formData, {
+        await axios.post(`${API_URL}/api/banner`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
       }

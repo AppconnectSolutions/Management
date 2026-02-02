@@ -11,14 +11,15 @@ export default function DailyBestAdmin() {
     { title: "", description: "", rating: "", ctaLabel: "", image: null, preview: "" },
     { title: "", description: "", rating: "", ctaLabel: "", image: null, preview: "" },
   ]);
+const API_URL = process.env.REACT_APP_API_URL;
 
   // Fetch existing hero + products
   useEffect(() => {
     const fetchData = async () => {
-      const heroRes = await axios.get("http://localhost:5000/api/daily-best/hero");
+      const heroRes = await axios.get(`${API_URL}/api/daily-best/hero`);
       if (heroRes.data) setHero({ ...heroRes.data, preview: heroRes.data.image_url });
 
-      const prodRes = await axios.get("http://localhost:5000/api/daily-best/products");
+      const prodRes = await axios.get(`${API_URL}/api/daily-best/products`);
       if (prodRes.data.length > 0) setProducts(prodRes.data.map(p => ({ ...p, preview: p.image_url })));
     };
     fetchData();
@@ -37,7 +38,7 @@ export default function DailyBestAdmin() {
     fd.append("description", hero.description);
     fd.append("ctaLabel", hero.ctaLabel);
     if (hero.image) fd.append("image", hero.image);
-    await axios.post("http://localhost:5000/api/daily-best/hero", fd);
+    await axios.post(`${API_URL}/api/daily-best/hero`, fd);
     alert("Hero saved");
   };
 
@@ -63,7 +64,7 @@ export default function DailyBestAdmin() {
       fd.append("rating", p.rating);
       fd.append("ctaLabel", p.ctaLabel);
       if (p.image) fd.append("image", p.image);
-      await axios.post("http://localhost:5000/api/daily-best/products", fd);
+      await axios.post(`${API_URL}/api/daily-best/products`, fd);
     }
     alert("Products saved");
   };

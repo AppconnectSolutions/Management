@@ -11,6 +11,7 @@ const labels = [
   "Trusted by 250+ Farmers",
   "Quality Tested & Verified",
 ];
+const API_URL = process.env.REACT_APP_API_URL;
 
 export default function WhyChooseAdmin() {
   const [companyName, setCompanyName] = useState("");
@@ -19,7 +20,7 @@ export default function WhyChooseAdmin() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await axios.get("http://localhost:5000/api/why-choose");
+        const res = await axios.get(`${API_URL}/api/why-choose`);
         if (res.data) {
           setCompanyName(res.data.company_name || "");
           const updatedImages = labels.map((_, i) => ({
@@ -52,7 +53,7 @@ export default function WhyChooseAdmin() {
         if (img.file) formData.append(`image${i + 1}`, img.file);
       });
 
-      await axios.post("http://localhost:5000/api/why-choose", formData, {
+      await axios.post(`${API_URL}/api/why-choose`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 

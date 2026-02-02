@@ -9,6 +9,7 @@ export default function TopPicksAdmin() {
     image: null,
     preview: "",
   });
+const API_URL = process.env.REACT_APP_API_URL;
 
   const [products, setProducts] = useState(
     Array(4).fill().map(() => ({
@@ -54,7 +55,7 @@ export default function TopPicksAdmin() {
     formData.append("buttonLabel", hero.buttonLabel);
     formData.append("image", hero.image);
 
-    await axios.post("http://localhost:5000/api/top-hero", formData);
+    await axios.post(`${API_URL}/api/top-hero`, formData);
     alert("Hero section saved");
   };
 
@@ -65,7 +66,7 @@ export default function TopPicksAdmin() {
       Object.entries(p).forEach(([key, val]) => {
         if (key !== "preview" && val) formData.append(key, val);
       });
-      await axios.post("http://localhost:5000/api/top-picks", formData);
+      await axios.post(`${API_URL}/api/top-picks`, formData);
     }
     alert("Top picks saved");
   };

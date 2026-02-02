@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 
-const API_URL = "http://localhost:5000";
+const API_URL = "ecommerce-template-templatemanagementbac-5ae226-69-62-74-195.traefik.me";
 
 export default function TopOfferAdmin() {
   const [formData, setFormData] = useState({

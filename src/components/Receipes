@@ -4,10 +4,11 @@ import axios from "axios";
 export default function RecipesAdmin() {
   const [recipes, setRecipes] = useState([]);
   const [form, setForm] = useState({ title: "", description: "", image: null, preview: "" });
+const API_URL = process.env.REACT_APP_API_URL;
 
   // Fetch recipes
   const fetchRecipes = async () => {
-    const res = await axios.get("http://localhost:5000/api/recipes");
+    const res = await axios.get(`${API_URL}/api/recipes`);
     setRecipes(res.data);
   };
 
@@ -28,7 +29,7 @@ export default function RecipesAdmin() {
     formData.append("description", form.description);
     formData.append("image", form.image);
 
-    await axios.post("http://localhost:5000/api/recipes", formData, {
+    await axios.post(`${API_URL}/api/recipes`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
 
