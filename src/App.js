@@ -5,6 +5,8 @@ import NavbarAdmin from "./components/NavbarAdmin";
 import BannerAdmin from "./components/BannerAdmin";
 import WhyChooseAdmin from "./components/WhyChooseAdmin";
 import TopPicksAdmin from "./components/TopPicksAdmin";
+import RecipesAdmin from "./components/RecipesAdmin";
+import DailyBestAdmin from "./components/DailyBestAdmin";
 
 function App() {
   return (
@@ -18,7 +20,8 @@ function App() {
             <Route path="/admin/banner" element={<BannerAdmin />} />
             <Route path="/admin/why-choose" element={<WhyChooseAdmin />} />
             <Route path="/admin/top-picks" element={<TopPicksAdmin />} />
-
+            <Route path="/admin/recipes" element={<RecipesAdmin />} />
+            <Route path="/admin/daily-sales"  element={<DailyBestAdmin />} />
             {/* other routes */}
           </Routes>
         </main>
