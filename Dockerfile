@@ -18,14 +18,8 @@ RUN rm -rf /usr/share/nginx/html/*
 # Copy CRA build output
 COPY --from=build /app/build /usr/share/nginx/html
 
-# Copy custom nginx config template
-COPY nginx.conf.template /etc/nginx/conf.d/default.conf.template
+# Copy custom nginx config
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Set default port (can be overridden)
-ENV PORT=8080
-
-# Replace port in nginx config
-RUN envsubst '\$PORT' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf
-
-EXPOSE $PORT
+EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]
