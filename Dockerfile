@@ -1,4 +1,3 @@
-
 # ---------- Build stage ----------
 FROM node:20-alpine AS build
 
@@ -10,19 +9,23 @@ RUN npm install
 COPY . .
 RUN npm run build
 
-
 # ---------- Production stage ----------
 FROM nginx:alpine
 
+# Remove default HTML
 RUN rm -rf /usr/share/nginx/html/*
 
-# CRA output is "build"
+# Copy CRA build output
 COPY --from=build /app/build /usr/share/nginx/html
 
-# SPA routing support
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy custom nginx config template
+COPY nginx.conf.template /etc/nginx/conf.d/default.conf.template
 
-EXPOSE 80
+# Set default port (can be overridden)
+ENV PORT=8080
+
+# Replace port in nginx config
+RUN envsubst '\$PORT' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf
+
+EXPOSE $PORT
 CMD ["nginx", "-g", "daemon off;"]
-
-
