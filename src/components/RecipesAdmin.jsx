@@ -4,7 +4,7 @@ import axios from "axios";
 export default function RecipesAdmin() {
   const [recipes, setRecipes] = useState([]);
   const [form, setForm] = useState({ title: "", description: "", image: null, preview: "" });
-  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+  const API_URL = import.meta.env.VITE_API_URL || "ecommerce-template-templatemanagementbac-5ae226-69-62-74-195.traefik.me";
 
 
   // Fetch recipes
